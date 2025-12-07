@@ -75,6 +75,14 @@ type Span interface {
 	// TracerProvider returns a TracerProvider that can be used to generate
 	// additional Spans on the same telemetry pipeline as the current Span.
 	TracerProvider() TracerProvider
+
+	// TraceID returns the trace ID of the span.
+	// This is a convenience method equivalent to calling span.SpanContext().TraceID().
+	TraceID() TraceID
+
+	// SpanID returns the span ID of the span.
+	// This is a convenience method equivalent to calling span.SpanContext().SpanID().
+	SpanID() SpanID
 }
 
 // Link is the relationship between two Spans. The relationship can be within

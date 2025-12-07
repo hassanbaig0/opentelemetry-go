@@ -34,4 +34,21 @@ type Tracer interface {
 	// Any Span that is created MUST also be ended. This is the responsibility of the user.
 	// Implementations of this API may leak memory or other resources if Spans are not ended.
 	Start(ctx context.Context, spanName string, opts ...SpanStartOption) (context.Context, Span)
+
+	// StartSpan creates a span without requiring a context.
+	// This is useful for manual instrumentation where context propagation is not available.
+	//
+	// To create a child span, use WithParentTraceID and WithParentSpanID options.
+	// If no parent IDs are specified, a new root span will be created.
+	//
+	// Example creating a root span:
+	//   span := tracer.StartSpan("operation-name")
+	//
+	// Example creating a child span:
+	//   span := tracer.StartSpan("child-operation",
+	//     trace.WithParentTraceID(parentTraceID),
+	//     trace.WithParentSpanID(parentSpanID))
+	//
+	// The span must be ended by calling End() when the operation is complete.
+	StartSpan(spanName string, opts ...SpanStartOption) Span
 }

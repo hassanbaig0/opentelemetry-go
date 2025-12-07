@@ -186,3 +186,110 @@ func (tr *tracer) newRecordingSpan(
 func (tr *tracer) newNonRecordingSpan(sc trace.SpanContext) nonRecordingSpan {
 	return nonRecordingSpan{tracer: tr, sc: sc}
 }
+
+// StartSpan creates a span without requiring a context.
+// This is useful for manual instrumentation where context propagation is not available.
+// This method bypasses context usage for maximum performance in high-frequency scenarios.
+func (tr *tracer) StartSpan(name string, options ...trace.SpanStartOption) trace.Span {
+	config := trace.NewSpanStartConfig(options...)
+
+	// Check if parent IDs were provided
+	parentTraceID := config.ParentTraceID()
+	parentSpanID := config.ParentSpanID()
+
+	// Determine parent span context
+	var psc trace.SpanContext
+	if parentTraceID.IsValid() {
+		// Create a parent span context from provided IDs
+		psc = trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID: parentTraceID,
+			SpanID:  parentSpanID,
+			Remote:  true,
+		})
+	}
+
+	// Generate trace ID and span ID without context overhead
+	// The default ID generator doesn't use the context parameter
+	var tid trace.TraceID
+	var sid trace.SpanID
+	if parentTraceID.IsValid() && !config.NewRoot() {
+		// Use parent trace ID and generate new span ID
+		tid = parentTraceID
+		sid = tr.provider.idGenerator.NewSpanID(nil, tid)
+	} else {
+		// Generate new trace ID and span ID for root span
+		tid, sid = tr.provider.idGenerator.NewIDs(nil)
+	}
+
+	// Perform sampling decision
+	samplingResult := tr.provider.sampler.ShouldSample(SamplingParameters{
+		ParentContext: nil, // No context needed for manual instrumentation
+		TraceID:       tid,
+		Name:          name,
+		Kind:          config.SpanKind(),
+		Attributes:    config.Attributes(),
+		Links:         config.Links(),
+	})
+
+	// Build span context
+	scc := trace.SpanContextConfig{
+		TraceID:    tid,
+		SpanID:     sid,
+		TraceState: samplingResult.Tracestate,
+	}
+	if isSampled(samplingResult) {
+		scc.TraceFlags = psc.TraceFlags() | trace.FlagsSampled
+	} else {
+		scc.TraceFlags = psc.TraceFlags() &^ trace.FlagsSampled
+	}
+	sc := trace.NewSpanContext(scc)
+
+	// Create the appropriate span type
+	if !isRecording(samplingResult) {
+		return tr.newNonRecordingSpan(sc)
+	}
+
+	// Create recording span directly without context
+	return tr.newRecordingSpanDirect(psc, sc, name, samplingResult, &config)
+}
+
+// newRecordingSpanDirect creates a recording span without requiring context.
+// This is used by StartSpan for context-free span creation.
+func (tr *tracer) newRecordingSpanDirect(
+	psc, sc trace.SpanContext,
+	name string,
+	sr SamplingResult,
+	config *trace.SpanConfig,
+) *recordingSpan {
+	startTime := config.Timestamp()
+	if startTime.IsZero() {
+		startTime = time.Now()
+	}
+
+	s := &recordingSpan{
+		parent:      psc,
+		spanContext: sc,
+		spanKind:    trace.ValidateSpanKind(config.SpanKind()),
+		name:        name,
+		startTime:   startTime,
+		events:      newEvictedQueueEvent(tr.provider.spanLimits.EventCountLimit),
+		links:       newEvictedQueueLink(tr.provider.spanLimits.LinkCountLimit),
+		tracer:      tr,
+	}
+
+	for _, l := range config.Links() {
+		s.AddLink(l)
+	}
+
+	s.SetAttributes(sr.Attributes...)
+	s.SetAttributes(config.Attributes()...)
+
+	// Notify span processors
+	// OnStart implementations in standard processors (batch, simple) ignore the context parameter
+	sps := tr.provider.getSpanProcessors()
+	for _, sp := range sps {
+		sp.sp.OnStart(nil, s)
+	}
+
+	return s
+}

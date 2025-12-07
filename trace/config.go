@@ -54,14 +54,47 @@ func (fn tracerOptionFunc) apply(cfg TracerConfig) TracerConfig {
 	return fn(cfg)
 }
 
+// WithParentTraceID specifies the parent trace ID for a span.
+// This is used when creating spans without a context that contains parent span information.
+// If used together with WithParentSpanID, the span will be a child of the specified parent.
+// If used without WithParentSpanID, the span will be a root span with the specified trace ID.
+func WithParentTraceID(traceID TraceID) SpanStartOption {
+	return spanOptionFunc(func(cfg SpanConfig) SpanConfig {
+		cfg.parentTraceID = traceID
+		return cfg
+	})
+}
+
+// WithParentSpanID specifies the parent span ID for a span.
+// This should be used together with WithParentTraceID to establish a parent-child relationship.
+// If used without WithParentTraceID, this option is ignored.
+func WithParentSpanID(spanID SpanID) SpanStartOption {
+	return spanOptionFunc(func(cfg SpanConfig) SpanConfig {
+		cfg.parentSpanID = spanID
+		return cfg
+	})
+}
+
 // SpanConfig is a group of options for a Span.
 type SpanConfig struct {
-	attributes []attribute.KeyValue
-	timestamp  time.Time
-	links      []Link
-	newRoot    bool
-	spanKind   SpanKind
-	stackTrace bool
+	attributes    []attribute.KeyValue
+	timestamp     time.Time
+	links         []Link
+	newRoot       bool
+	spanKind      SpanKind
+	stackTrace    bool
+	parentTraceID TraceID
+	parentSpanID  SpanID
+}
+
+// ParentTraceID returns the parent trace ID if specified.
+func (cfg *SpanConfig) ParentTraceID() TraceID {
+	return cfg.parentTraceID
+}
+
+// ParentSpanID returns the parent span ID if specified.
+func (cfg *SpanConfig) ParentSpanID() SpanID {
+	return cfg.parentSpanID
 }
 
 // Attributes describe the associated qualities of a Span.

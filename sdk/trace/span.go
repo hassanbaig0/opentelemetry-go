@@ -957,3 +957,23 @@ type Status struct {
 	// applicable when Code is Error.
 	Description string
 }
+
+// TraceID returns the trace ID of the span.
+func (s *recordingSpan) TraceID() trace.TraceID {
+	return s.spanContext.TraceID()
+}
+
+// SpanID returns the span ID of the span.
+func (s *recordingSpan) SpanID() trace.SpanID {
+	return s.spanContext.SpanID()
+}
+
+// TraceID returns the trace ID of the span.
+func (s nonRecordingSpan) TraceID() trace.TraceID {
+	return s.sc.TraceID()
+}
+
+// SpanID returns the span ID of the span.
+func (s nonRecordingSpan) SpanID() trace.SpanID {
+	return s.sc.SpanID()
+}
